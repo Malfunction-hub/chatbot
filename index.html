@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>MIDH Chatbot Widget</title>
+  <style>
+    :root {
+      --midh-green-1: #1e6f5c;
+      --midh-green-2: #114a3f;
+      --muted: #e5e7eb;
+      --panel-bg: #f8fafc;
+    }
+    .midh-chat-launcher{
+      position: fixed; bottom: 20px; right: 20px; z-index: 2147483000;
+      border: none; border-radius: 999px; padding: 12px 16px;
+      font: 600 14px/1.2 system-ui, -apple-system, "Segoe UI", Roboto, Arial;
+      box-shadow: 0 8px 24px rgba(0,0,0,.18); cursor: pointer;
+      background: var(--midh-green-1); color: #fff;
+    }
+    .midh-chat-panel{
+      position: fixed; bottom: 80px; right: 20px; width: 380px; max-width: 96vw; height: 600px;
+      background: #fff; border: 1px solid var(--muted); border-radius: 14px; overflow: hidden;
+      box-shadow: 0 20px 40px rgba(0,0,0,.18); display: none; z-index: 2147483001;
+      font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, Arial;
+    }
+    .midh-chat-header{
+      display:flex; align-items:center; justify-content:space-between;
+      padding:10px 12px; background: var(--midh-green-2); color:#fff;
+    }
+    .midh-chat-header .left { display:flex; align-items:center; gap:10px; }
+    .midh-chat-header img { max-height:34px; width:auto; border-radius:4px; }
+    .midh-chat-body { height: calc(100% - 132px); overflow-y:auto; padding:12px; background: var(--panel-bg); }
+    .midh-msg { margin:10px 0; display:flex; }
+    .midh-msg .bubble { padding:10px 12px; border-radius:12px; max-width:88%; word-wrap:break-word; }
+    .midh-msg.user { justify-content:flex-end; }
+    .midh-msg.user .bubble { background:#e6f5f0; }
+    .midh-msg.bot .bubble { background:#fff; border:1px solid var(--muted); }
+    .midh-quick { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+    .midh-chip { border:1px solid #cbd5e1; background:#fff; border-radius:999px; padding:6px 10px; cursor:pointer; font-weight:600; }
+    .midh-chat-inputbar{ display:flex; gap:8px; padding:10px; border-top:1px solid var(--muted); background:#fff; }
+    .midh-chat-inputbar input{ flex:1; border:1px solid #cbd5e1; border-radius:10px; padding:10px 12px; outline:none; }
+    .midh-chat-inputbar button{ border:none; border-radius:10px; padding:10px 14px; cursor:pointer; background:var(--midh-green-1); color:#fff; font-weight:700; }
+    .midh-sr-only{ position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0 0 0 0); border:0; }
+    @media (max-width:420px) { .midh-chat-panel{ right:8px; left:8px; width:auto; } .midh-chat-body{ height:calc(100% - 140px);} }
+  </style>
+</head>
+<body>
+  <!-- Launcher -->
+  <button id="midh-open" class="midh-chat-launcher" aria-haspopup="dialog" aria-controls="midh-chat" aria-expanded="false">
+    💬 Ask MIDH
+  </button>
+
+  <!-- Panel -->
+  <div id="midh-chat" class="midh-chat-panel" role="dialog" aria-modal="true" aria-labelledby="midh-title" aria-describedby="midh-desc">
+    <div class="midh-chat-header" >
+      <div class="left">
+        <img id="midh-logo" src="https://midh.gov.in/images/midh-logo.png" alt="MIDH logo"/>
+        <div>
+          <div id="midh-title" style="font-weight:700;font-size:15px;">MIDH Virtual Assistant</div>
+          <div id="midh-sub" style="font-size:12px;opacity:.9">Official: Operational Guidelines (Apr 2025)</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <label for="midh-lang" class="midh-sr-only">Language</label>
+        <select id="midh-lang" aria-label="Language">
+          <option value="en">English</option>
+          <option value="hi">हिन्दी</option>
+        </select>
+        <button id="midh-close" aria-label="Close chat" style="background:#0b3a31;color:#fff;border:none;padding:6px 8px;border-radius:6px;">✕</button>
+      </div>
+    </div>
+
+    <div id="midh-body" class="midh-chat-body" tabindex="0" aria-live="polite"></div>
+
+    <div class="midh-chat-inputbar" role="group" aria-label="Chat input">
+      <label for="midh-input" id="midh-desc" class="midh-sr-only">Type your question</label>
+      <input id="midh-input" placeholder="Try: 'Guidelines 2025', 'Funding pattern', 'How to apply'"/>
+      <button id="midh-send">Send</button>
+    </div>
+  </div>
+
+  <script>
+  (function(){
+    // CONFIG: update if you host PDF or logo at different path
+    const PDF_URL = "https://drive.google.com/file/d/1QPh8grkNYl-FyihYgegpKKhCM4tPctQ-/view?usp=sharing";
+    const LOGO_URL = "https://midh.gov.in/images/midh-logo.png";
+
+    // Quick site links
+    const LINKS = {
+      about: "https://midh.gov.in/About",
+      rti: "https://midh.gov.in/RightToInformation",
+      myscheme: "https://www.myscheme.gov.in/schemes/midh",
+      contact: "https://midh.gov.in/ContactUs"
+    };
+
+    // Knowledge base entries (detailed, official-summary pulled from the uploaded PDF)
+    const KB = [
+      {
+        intents:["what is midh","about midh","midh kya hai","about"],
+        answer_en: `<strong>What is MIDH?</strong><br>
+        MIDH (Mission for Integrated Development of Horticulture) is a Centrally Sponsored Scheme for the holistic growth of horticulture — fruits, vegetables, spices, flowers, medicinal & aromatic plants, coconut, cashew, cocoa and bamboo. It is implemented via State Horticulture Missions and national agencies (NHB, CDB, NBM, CIH).` ,
+        answer_hi: `<strong>MIDH क्या है?</strong><br> MIDH (Mission for Integrated Development of Horticulture) बागवानी के समग्र विकास हेतु केन्द्रीय प्रायोजित योजना है — फल, सब्जियाँ, मसाले, फूल, औषधीय/सुगंधित पौधे, नारियल, काजू, कोको और बाँस के लिए। इसका क्रियान्वयन राज्य बागवानी मिशन तथा राष्ट्रीय संस्थाओं के माध्यम से होता है।`
+      },
+      {
+        intents:["guidelines","operational guidelines","guideline 2025","midh guideline","og 2025"],
+        // full summary + embedded PDF viewer
+        answer_en: `<strong>Operational Guidelines — April 2025 (summary)</strong>
+        <ul>
+          <li><strong>Objectives:</strong> Promote holistic horticulture growth (research, tech, extension, PHM, processing & marketing), improve productivity, promote cluster approach and FPOs, strengthen planting material & micro-irrigation.</li>
+          <li><strong>Strategy:</strong> End-to-end approach (pre-production → production → post-harvest → processing → marketing); create Centres of Excellence; adopt precision & protected cultivation.</li>
+          <li><strong>Funding pattern (high-level):</strong> GoI share 60% (all States); 90% for NE & Himalayan States; 100% for NHB/CDB/CIH/NLAs/UTs without legislature.</li>
+          <li><strong>Major components:</strong> Production & productivity (nurseries, clean plant program), Protected cultivation, PHM & cold chain, Market infra, Processing, Quality systems (Bharat GAP/organic), HRD and mechanization.</li>
+        </ul>
+        <em>Complete document is embedded below for reading and download.</em>`,
+        answer_hi: `<strong>ऑपरेशनल गाइडलाइंस — अप्रैल 2025 (संग्रह)</strong>
+        <ul>
+          <li><strong>उद्देश्य:</strong> समग्र बागवानी विकास (अनुसंधान, तकनीक, विस्तार, PHM, प्रसंस्करण व विपणन), उत्पादकता सुधार, क्लस्टर/एफपीओ को बढ़ावा, गुणवत्तायुक्त रोपण सामग्री एवं माइक्रो-इरिगेशन को सुदृढ़ करना।</li>
+          <li><strong>रणनीति:</strong> एंड-टू-एंड दृष्टिकोण (पूर्व-उत्पादन → उत्पादन → पोस्ट-हैर्वेस्ट → प्रसंस्करण → विपणन); सेंटर ऑफ एक्सीलेंस; प्रिसिजन और संरक्षित खेती को अपनाना।</li>
+          <li><strong>वित्त पोषण (सार):</strong> केंद्र 60% (सभी राज्य); 90% पूर्वोत्तर/हिमालयी राज्य; 100% NHB/CDB/CIH/NLAs/विधानमंडल रहित UTs के लिए।</li>
+          <li><strong>मुख्य घटक:</strong> उत्पादन/उत्पादकता (नर्सरी/क्लीन प्लांट), संरक्षित खेती, PHM/कोल्ड-चेन, बाजार/प्रसंस्करण, गुणवत्ता प्रणाली, HRD, मशीनीकरण।</li>
+        </ul>
+        <em>पूरा दस्तावेज नीचे एम्बेड किया गया है।</em>`,
+        embed_pdf: true
+      },
+      {
+        intents:["funding","funding pattern","sharing pattern","goi share","cost sharing","vitt"],
+        answer_en: `<strong>Funding pattern — quick reference</strong><br>
+        • GoI: 60% for general States (State: 40%).<br>
+        • GoI: 90% for North-Eastern & Himalayan States (State: 10%).<br>
+        • GoI: 100% for NHB, CDB, CIH, National Level Agencies and UTs without legislature.<br>
+        (Detailed cost norms & activity-wise assistance ceilings are in Annexures V–VIII of the Guidelines.)`,
+        answer_hi: `<strong>वित्त पोषण (सार)</strong><br>
+        • केन्द्य़: 60% (सामान्य राज्य) — राज्य: 40%.<br>
+        • केन्द्य़: 90% (पूर्वोत्तर व हिमालयी राज्य) — राज्य: 10%.<br>
+        • केन्द्य़: 100% (NHB, CDB, CIH, राष्ट्रीय एजेंसी, UTs बिना विधानमंडल).`
+      },
+      {
+        intents:["intervention","interventions","components","major interventions","activities"],
+        answer_en: `<strong>Major interventions</strong><ul>
+          <li><b>Production & Productivity:</b> area expansion, nurseries, tissue culture units, clean plant programme, rejuvenation, high-density orchards and seed/planting material distribution.</li>
+          <li><b>Protected Cultivation & Precision Farming:</b> greenhouses, shade-nets, hydroponics/aeroponics, fertigation & sensor-based automation.</li>
+          <li><b>Post Harvest Management & Cold Chain:</b> packhouses, pre-cooling, cold storage, refrigerated transport, ripening chambers (NCCD technical specs apply).</li>
+          <li><b>Market & Processing Infrastructure:</b> retail outlets, integrated pack-houses, primary/secondary processing, value-addition.</li>
+          <li><b>Quality, Certification & HRD:</b> organic/Bharat GAP, GAP certification, training, PFDCs, TSG support.</li>
+        </ul>`,
+        answer_hi: `<strong>मुख्य हस्तक्षेप</strong><ul>
+          <li><b>उत्पादन व उत्पादकता:</b> क्षेत्र विस्तार, नर्सरी/TC यूनिट, क्लीन प्लांट प्रोग्राम, पुनर्जीवन, हाई-डेन्सिटी रोपण व रोपण सामग्री वितरण।</li>
+          <li><b>संरक्षित खेती व प्रिसिजन फार्मिंग:</b> ग्रीनहाउस, शेड-नेट, हाइड्रोपोनिक्स/एरोपोनिक्स, फर्टिगेशन व सेंसर ऑटोमेशन।</li>
+          <li><b>PHM व कोल्ड-चेन:</b> पैकहाउस, प्री-कूलिंग, कोल्ड स्टोरेज, फ्रिजर वाहक, रिपनिंग चैम्बर (NCCD मानदण्ड)।</li>
+          <li><b>बाजार/प्रसंस्करण:</b> रिटेल आउटलेट्स, इंटीग्रेटेड पैक-हाउस, प्राथमिक/माध्यमिक प्रसंस्करण।</li>
+          <li><b>गुणवत्ता व HRD:</b> ऑर्गेनिक/भारत-GAP, प्रशिक्षण, PFDCs, TSG सहायता।</li>
+        </ul>`
+      },
+      {
+        intents:["eligibility","subsidy","pattern of assistance","cost norms","annexure","eligibility & subsidy","yogyata"],
+        answer_en: `<strong>Eligibility & subsidy — highlights</strong><br>
+        • Eligibility and subsidy ceilings are activity- and beneficiary-specific (individual farmers, FPOs/SHGs/Cooperatives, public agencies).<br>
+        • Many PHM/processing/cold-chain components follow NCCD guidelines and carry credit-linked back-ended assistance (typical subsidy shares: 35% general / 50% NE & Himalayan & special areas; varies by component).<br>
+        • Annexures V–VIII contain detailed cost norms (per ha, per unit) and exact assistance percentages for each component (area expansion, protected cultivation, cold storage, nurseries, TC units, etc.).`,
+        answer_hi: `<strong>पात्रता व सब्सिडी — मुख्य बिंदु</strong><br>
+        • पात्रता व सब्सिडी सीमा गतिविधि व लाभार्थी के आधार पर होती है (व्यक्ति, FPO/SHG/समूह, सार्वजनिक एजेंसी)।<br>
+        • PHM/कोल्ड-चेन घटक NCCD मानदण्ड के अनुसार होते हैं; अक्सर क्रेडिट-लिंक्ड बैक-एन्ड सहायता। (उदा. सामान्य क्षेत्र में 35% / NE व विशेष क्षेत्रों में 50%—घटक के अनुसार बदलता है)।<br>
+        • सटीक लागत मानक व सहायता तालिकाएँ Annexure V–VIII में हैं।`
+      },
+      {
+        intents:["how to apply","apply","application","portal","kaise apply"],
+        answer_en:`Applications are made via <strong>State Horticulture Missions</strong>. For citizen-level info check your State SHM portal or the consolidated myScheme MIDH page. States submit Annual Action Plans to DA&FW and implement via SHMs / NLAs as applicable.`,
+        answer_hi:`आवेदन <strong>राज्य बागवानी मिशन</strong> के माध्यम से किए जाते हैं। नागरिक जानकारी हेतु अपने राज्य के SHM पोर्टल या myScheme MIDH पेज देखें।`
+      },
+      {
+        intents:["rti","right to information"],
+        answer_en:`RTI / transparency information is available on the official MIDH site (RTI / Contact pages).`,
+        answer_hi:`RTI / पारदर्शिता की जानकारी आधिकारिक MIDH साइट पर उपलब्ध है।`
+      },
+      {
+        intents:["contact","phone","email","sampark","helpline"],
+        answer_en:`Please use the official Contact Us page of MIDH for phone/email/contact centre details.`,
+        answer_hi:`आधिकारिक संपर्क विवरण हेतु कृपया MIDH के Contact Us पन्ने का उपयोग करें।`
+      }
+    ];
+
+    // Attach logo if provided
+    const logoImg = document.getElementById('midh-logo');
+    logoImg.onerror = ()=> { logoImg.style.display = 'none'; };
+    logoImg.src = LOGO_URL;
+
+    // Basic NL matching (fuzzy)
+    function findAnswer(query){
+      const t = (query||'').toLowerCase();
+      for(const it of KB) {
+        if (it.intents.some(k => t.includes(k))) return it;
+      }
+      // fallbacks by keywords
+      if (/guideline|guidelines|operational/.test(t)) return KB[1];
+      if (/fund|share|funding|pattern/.test(t)) return KB[2];
+      if (/intervent|component|activity|what are|major/.test(t)) return KB[3];
+      if (/eligib|subsidi|cost norm|annexure|pattern of assistance/.test(t)) return KB[4];
+      if (/apply|portal|how to apply/.test(t)) return KB[5];
+      if (/rti/.test(t)) return KB[6];
+      if (/contact|phone|email|sampark|helpline/.test(t)) return KB[7];
+      if (/about|what is midh|midh kya/.test(t)) return KB[0];
+      return null;
+    }
+
+    // UI wiring
+    const openBtn = document.getElementById('midh-open');
+    const closeBtn = document.getElementById('midh-close');
+    const panel = document.getElementById('midh-chat');
+    const body = document.getElementById('midh-body');
+    const input = document.getElementById('midh-input');
+    const send = document.getElementById('midh-send');
+    const langSel = document.getElementById('midh-lang');
+
+    function toggle(open){
+      panel.style.display = open ? 'block' : 'none';
+      openBtn.setAttribute('aria-expanded', String(open));
+      if(open) setTimeout(()=> input.focus(),50);
+    }
+    openBtn.addEventListener('click', ()=> toggle(true));
+    closeBtn.addEventListener('click', ()=> toggle(false));
+
+    function appendMsg(role, html, quick=[]){
+      const row = document.createElement('div');
+      row.className = 'midh-msg ' + role;
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble';
+      bubble.innerHTML = html;
+      row.appendChild(bubble);
+
+      if(quick.length){
+        const qwrap = document.createElement('div');
+        qwrap.className = 'midh-quick';
+        quick.forEach(text=>{
+          const b = document.createElement('button');
+          b.type='button';
+          b.className='midh-chip';
+          b.textContent = text;
+          b.addEventListener('click', ()=> { input.value = text; handleSend(); });
+          qwrap.appendChild(b);
+        });
+        row.appendChild(qwrap);
+      }
+
+      body.appendChild(row);
+      body.scrollTop = body.scrollHeight;
+    }
+
+    function renderItem(item){
+      const hi = langSel.value === 'hi';
+      const ans = hi ? (item.answer_hi || item.answer_en) : item.answer_en;
+      const quick = ['Guidelines 2025','Funding pattern','How to apply','Contact','RTI'];
+      if (item.embed_pdf) {
+        const pdfHtml = `<div style="margin-top:8px;height:420px;border-radius:8px;overflow:hidden;"><iframe src="${PDF_URL}" width="100%" height="100%" style="border:none;" title="MIDH Guidelines 2025 PDF"></iframe></div>
+          <div style="margin-top:8px;">
+            <a href="${PDF_URL}" target="_blank" rel="noopener" class="midh-chip" style="text-decoration:none;">Open full PDF</a>
+          </div>`;
+        appendMsg('bot', ans + pdfHtml, quick);
+      } else {
+        appendMsg('bot', ans, quick);
+      }
+    }
+
+    function handleSend(){
+      const q = input.value.trim();
+      if(!q) return;
+      appendMsg('user', `<div class="bubble">${escapeHtml(q)}</div>`);
+      input.value = '';
+      const item = findAnswer(q);
+      if(item) renderItem(item);
+      else appendMsg('bot', langSel.value==='hi' ? "मैं समझ नहीं पाया/पाई। आप 'Guidelines 2025' या 'How to apply' पूछ सकते हैं।" : "I’m not sure — try: 'Guidelines 2025', 'How to apply', or 'Funding pattern'.", ['Guidelines 2025','How to apply','Funding pattern']);
+    }
+
+    send.addEventListener('click', handleSend);
+    input.addEventListener('keydown', (e)=> { if(e.key==='Enter') handleSend(); });
+
+    function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
+
+    // initial messages
+    appendMsg('bot', '<strong>MIDH Assistant ready.</strong><div style="margin-top:6px;">Namaste — ask about Guidelines 2025, funding, eligibility, or how to apply.</div>', ['Guidelines 2025','Funding pattern','How to apply']);
+  })();
+  </script>
+</body>
+</html>
